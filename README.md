@@ -654,6 +654,7 @@ chorus/
 - Event log is best-effort (IndexedDB writes may fail silently).
 - No CRDT-level conflict resolution — relies on per-slot writes to avoid conflicts.
 - Requires a PeerJS signaling server (default: `0.peerjs.com`).
+- **Full-mesh topology** — every peer connects to every other peer (O(n²) connections). This is optimized for small collaborative sessions (typically ≤ 20 peers). For larger groups, consider a relay/super-peer architecture.
 
 ---
 

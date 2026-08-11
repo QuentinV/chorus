@@ -176,6 +176,45 @@ export function createChorus(options: ChorusOptions = {}) {
                     }
                     return;
                 }
+                if (data?.action === 'peerList') {
+                    // Full-mesh discovery: connect to all peers the host knows about
+                    const state = getState();
+                    const objectId = state?.id;
+                    if (!objectId) return;
+                    const knownPeers: string[] = data.peers ?? [];
+                    for (const peerId of knownPeers) {
+                        if (
+                            peerId ===
+                            connection.getPeerData()[objectId]?.peerId
+                        ) {
+                            continue;
+                        }
+                        await connection.connectToPeer(
+                            objectId,
+                            peerId,
+                            processMessage
+                        );
+                    }
+                    return;
+                }
+                if (data?.action === 'newPeer') {
+                    // Full-mesh discovery: connect to a newly joined peer
+                    const state = getState();
+                    const objectId = state?.id;
+                    const newPeerId = data.peerId;
+                    if (!objectId || !newPeerId) return;
+                    if (
+                        newPeerId === connection.getPeerData()[objectId]?.peerId
+                    ) {
+                        return;
+                    }
+                    await connection.connectToPeer(
+                        objectId,
+                        newPeerId,
+                        processMessage
+                    );
+                    return;
+                }
                 return;
             }
 
@@ -251,11 +290,14 @@ export function createChorus(options: ChorusOptions = {}) {
 
                 isDebug() &&
                     console.log('joining object of peer ', objectId, peerId);
-                await connection.initPeerConnection(
+                const peerObjectData = await connection.initPeerConnection(
                     objectId,
                     processMessage,
                     getState
                 );
+
+                setPeerId(peerObjectData.peerId);
+
                 const conn = await connection.connectToPeer(
                     objectId,
                     peerId,
@@ -268,6 +310,9 @@ export function createChorus(options: ChorusOptions = {}) {
                 });
 
                 isDebug() && console.log('joined');
+
+                connection.startHeartbeat(getState);
+
                 return objectId;
             }
         );

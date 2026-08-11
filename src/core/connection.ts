@@ -190,15 +190,54 @@ export class ChorusConnection {
             conn.on('data', (mess) => {
                 isDebug() && console.log(`[${peerId}] incoming`, mess);
                 processMessage(mess as Message, conn);
-                res(undefined);
             });
 
             conn.on('open', () => {
                 isDebug() && console.log(`[${peerId}] connection opened`);
+                res(undefined);
             });
         });
 
         return conn;
+    }
+
+    // -- Full-mesh peer discovery helpers
+    getKnownPeerIds(objectId: string): string[] {
+        const pod = this.peerData[objectId];
+        if (!pod) return [];
+        return Object.keys(pod.peers);
+    }
+
+    sendPeerList(objectId: string, conn: DataConnection): void {
+        const pod = this.peerData[objectId];
+        if (!pod) return;
+        conn.send({
+            type: 'control',
+            data: {
+                action: 'peerList',
+                peers: Object.keys(pod.peers),
+            },
+            peerId: pod.peerId,
+        });
+    }
+
+    notifyNewPeer(objectId: string, newPeerId: string): void {
+        const pod = this.peerData[objectId];
+        if (!pod) return;
+        Object.keys(pod.peers).forEach((peerId) => {
+            if (peerId === newPeerId) return;
+            const peerInfo = pod.peers[peerId];
+            if (peerInfo?.conn) {
+                peerInfo.conn.send({
+                    type: 'control',
+                    data: {
+                        action: 'newPeer',
+                        peerId: newPeerId,
+                    },
+                    peerId: pod.peerId,
+                });
+            }
+        });
     }
 
     async initPeerConnection(
@@ -239,6 +278,7 @@ export class ChorusConnection {
         peer.on('connection', async (conn) => {
             isDebug() && console.log('[ME] incoming connection', conn);
 
+            const isNewPeer = !data.peers[conn.peer];
             data.peers[conn.peer] = {
                 peerId: conn.peer,
                 conn,
@@ -273,6 +313,13 @@ export class ChorusConnection {
                     res(undefined);
                 });
             });
+
+            // Full-mesh discovery: send the new peer our known peer list so it
+            // can connect to everyone else, and notify existing peers of the newcomer.
+            this.sendPeerList(objectId, conn);
+            if (isNewPeer) {
+                this.notifyNewPeer(objectId, conn.peer);
+            }
 
             isDebug() &&
                 console.log('sending message back with state to', conn.peer);

@@ -178,6 +178,101 @@ describe('ChorusConnection — peer data persistence', () => {
     });
 });
 
+describe('ChorusConnection — full-mesh peer discovery', () => {
+    it('should return known peer ids for an object', () => {
+        const conn = new ChorusConnection();
+        const peerData = conn.getPeerData();
+        peerData['obj-1'] = {
+            objectId: 'obj-1',
+            peerId: 'me',
+            peers: {
+                'peer-2': { peerId: 'peer-2', lastSeen: Date.now() },
+                'peer-3': { peerId: 'peer-3', lastSeen: Date.now() },
+            },
+        };
+
+        expect(conn.getKnownPeerIds('obj-1')).toEqual(['peer-2', 'peer-3']);
+        expect(conn.getKnownPeerIds('unknown')).toEqual([]);
+    });
+
+    it('should send peerList control message on a connection', () => {
+        const conn = new ChorusConnection();
+        const sent: any[] = [];
+        const peerData = conn.getPeerData();
+        peerData['obj-1'] = {
+            objectId: 'obj-1',
+            peerId: 'me',
+            peers: {
+                'peer-2': { peerId: 'peer-2', lastSeen: Date.now() },
+            },
+        };
+        const connMock = { send: (m: any) => sent.push(m) } as any;
+
+        conn.sendPeerList('obj-1', connMock);
+
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({
+            type: 'control',
+            data: { action: 'peerList', peers: ['peer-2'] },
+            peerId: 'me',
+        });
+    });
+
+    it('should notify existing peers of a new peer', () => {
+        const conn = new ChorusConnection();
+        const sentToPeer2: any[] = [];
+        const sentToPeer3: any[] = [];
+        const peerData = conn.getPeerData();
+        peerData['obj-1'] = {
+            objectId: 'obj-1',
+            peerId: 'me',
+            peers: {
+                'peer-2': {
+                    peerId: 'peer-2',
+                    conn: { send: (m: any) => sentToPeer2.push(m) } as any,
+                    lastSeen: Date.now(),
+                },
+                'peer-3': {
+                    peerId: 'peer-3',
+                    conn: { send: (m: any) => sentToPeer3.push(m) } as any,
+                    lastSeen: Date.now(),
+                },
+            },
+        };
+
+        conn.notifyNewPeer('obj-1', 'peer-4');
+
+        expect(sentToPeer2).toHaveLength(1);
+        expect(sentToPeer2[0]).toMatchObject({
+            type: 'control',
+            data: { action: 'newPeer', peerId: 'peer-4' },
+            peerId: 'me',
+        });
+        expect(sentToPeer3).toHaveLength(1);
+    });
+
+    it('should not notify the new peer itself', () => {
+        const conn = new ChorusConnection();
+        const sent: any[] = [];
+        const peerData = conn.getPeerData();
+        peerData['obj-1'] = {
+            objectId: 'obj-1',
+            peerId: 'me',
+            peers: {
+                'new-peer': {
+                    peerId: 'new-peer',
+                    conn: { send: (m: any) => sent.push(m) } as any,
+                    lastSeen: Date.now(),
+                },
+            },
+        };
+
+        conn.notifyNewPeer('obj-1', 'new-peer');
+
+        expect(sent).toHaveLength(0);
+    });
+});
+
 describe('ChorusConnection — heartbeat', () => {
     it('should expose heartbeat methods', () => {
         const conn = new ChorusConnection();
